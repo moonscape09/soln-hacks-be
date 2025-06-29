@@ -17,6 +17,12 @@ class Shape(BaseModel):
     radiusY: Optional[int] = None
     color: Optional[str] = None
 
+class Line(BaseModel):
+    type: str  # should be "line"
+    points: List[float]
+    stroke: str
+    strokeWidth: int
+
 class TextAnnotation(BaseModel):
     text: str
     x: int
@@ -26,6 +32,7 @@ class TextAnnotation(BaseModel):
 
 class InterpretResponse(BaseModel):
     shapes: List[Shape] = []
+    lines: List[Line] = []
     texts: List[TextAnnotation] = []
 
 class InterpretRequest(BaseModel):
@@ -35,6 +42,7 @@ class InterpretRequest(BaseModel):
 async def interpret_prompt(request: InterpretRequest):
     result = parse_prompt(request.prompt)
     return InterpretResponse(
-        shapes=result["shapes"],
-        texts=result["texts"]
+        shapes=result.get("shapes", []),
+        lines=result.get("lines", []),
+        texts=result.get("texts", [])
     ) 
