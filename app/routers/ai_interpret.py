@@ -17,6 +17,12 @@ class Shape(BaseModel):
     radiusY: Optional[int] = None
     color: Optional[str] = None
 
+class Line(BaseModel):
+    type: str  # should be "line"
+    points: List[float]
+    stroke: str
+    strokeWidth: int
+
 class TextAnnotation(BaseModel):
     text: str
     x: int

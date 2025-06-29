@@ -20,6 +20,7 @@ SHAPE_KEYWORDS = {
     "ellipse": "ellipse",
     "square": "rectangle",
     "text": "text",
+    "line": "line"
 }
 
 def call_gemini_llm(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
@@ -29,12 +30,10 @@ def call_gemini_llm(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
         raise RuntimeError("GEMINI_API_KEY environment variable not set.")
     genai.configure(api_key=api_key)
     system_prompt = (
-        "You are a helpful assistant that converts drawing instructions into JSON. "
+        "You are a helpful assistant that converts drawing instructions into JSON for Konva JS. You should be familiar with the documentation for the shapes. "
         "Given a user's prompt, return a JSON object with two keys: 'shapes' (a list of shapes to draw) "
         "and 'texts' (a list of text annotations). Each shape should have a type (rectangle, circle, ellipse), "
-        "coordinates, size, and color. Each text should have the text, coordinates, fontSize, and color. "
-        "Example:\n"
-        "Prompt: Draw a blue rectangle and write Hello\n"
+        "coordinates, size, and color. Each text should have the text, coordinates, fontSize, and color. For the lines follow this" \
         "Output: {\"shapes\": [{\"type\": \"rectangle\", \"x\": 100, \"y\": 100, \"width\": 200, \"height\": 100, \"color\": \"blue\"}], \"texts\": [{\"text\": \"Hello\", \"x\": 150, \"y\": 250, \"fontSize\": 24, \"color\": \"black\"}]}\n"
         "Always return valid JSON."
     )
@@ -57,7 +56,7 @@ def call_gemini_llm(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
         return parsed
     except Exception as e:
         logger.error(f"Gemini LLM call or JSON parsing failed: {e}")
-        return {"shapes": [], "texts": []}
+        return {"shapes": [], "texts": [], "lines": []}
 
 def parse_prompt(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
     # Try Gemini LLM first
@@ -75,7 +74,7 @@ def parse_prompt(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
     prompt = prompt.lower()
     shapes = []
     texts = []
-
+    lines = []
     for keyword, shape_type in SHAPE_KEYWORDS.items():
         if keyword in prompt:
             if shape_type == "rectangle":
