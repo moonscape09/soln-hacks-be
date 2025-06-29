@@ -6,10 +6,8 @@ from typing import List, Dict, Any
 import google.generativeai as genai
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Set up debug logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -29,26 +27,33 @@ def call_gemini_llm(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
         logger.error("GEMINI_API_KEY environment variable not set.")
         raise RuntimeError("GEMINI_API_KEY environment variable not set.")
     genai.configure(api_key=api_key)
+
     system_prompt = (
-        "You are a helpful assistant that converts drawing instructions into JSON for Konva JS. You should be familiar with the documentation for the shapes. "
-        "Given a user's prompt, return a JSON object with two keys: 'shapes' (a list of shapes to draw) "
-        "and 'texts' (a list of text annotations). Each shape should have a type (rectangle, circle, ellipse), "
-        "coordinates, size, and color. Each text should have the text, coordinates, fontSize, and color. For the lines follow this" \
-        "Output: {\"shapes\": [{\"type\": \"rectangle\", \"x\": 100, \"y\": 100, \"width\": 200, \"height\": 100, \"color\": \"blue\"}], \"texts\": [{\"text\": \"Hello\", \"x\": 150, \"y\": 250, \"fontSize\": 24, \"color\": \"black\"}]}\n"
-        "Always return valid JSON."
+        "You are a helpful assistant that converts drawing instructions into JSON. "
+        "Return a JSON object with only one key: 'shapes', which is a list of objects. "
+        "Each shape must include a 'type' (rectangle, circle, ellipse, line, or text) and "
+        "appropriate properties:\n"
+        "- rectangle: x, y, width, height, color\n"
+        "- circle: x, y, radius, color\n"
+        "- ellipse: x, y, radiusX, radiusY, color\n"
+        "- line: points (array of x,y), stroke, strokeWidth\n"
+        "- text: text, x, y, fontSize, color\n"
+        "Example:\n"
+        "Prompt: Draw a blue rectangle and write Hello\n"
+        "Output: {\"shapes\": ["
+        "{\"type\": \"rectangle\", \"x\": 100, \"y\": 100, \"width\": 200, \"height\": 100, \"color\": \"blue\"}, "
+        "{\"type\": \"text\", \"text\": \"Hello\", \"x\": 150, \"y\": 250, \"fontSize\": 24, \"color\": \"black\"}"
+        "]}"
     )
 
     user_prompt = f"Prompt: {prompt}\nOutput:"
-    # Use the cheapest available Gemini model for text generation
     model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
     logger.debug(f"Calling Gemini LLM with prompt: {user_prompt}")
     try:
-        # Combine system instructions and user prompt as a single user message
         full_prompt = system_prompt + "\n" + user_prompt
         response = model.generate_content([full_prompt])
         content = response.text
         logger.debug(f"Gemini LLM raw response: {content}")
-        # Remove code block markers if present (robust)
         lines = [line for line in content.splitlines() if not line.strip().startswith("```")]
         cleaned = "\n".join(lines).strip()
         parsed = json.loads(cleaned)
@@ -56,25 +61,33 @@ def call_gemini_llm(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
         return parsed
     except Exception as e:
         logger.error(f"Gemini LLM call or JSON parsing failed: {e}")
-        return {"shapes": [], "texts": [], "lines": []}
+        return {"shapes": []}
+
+def flatten_points(shapes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    for shape in shapes:
+        if shape.get("type") == "line" and isinstance(shape.get("points"), list):
+            # Flatten nested [[x, y], [x2, y2]] → [x, y, x2, y2]
+            if all(isinstance(pt, list) and len(pt) == 2 for pt in shape["points"]):
+                shape["points"] = [coord for pt in shape["points"] for coord in pt]
+    return shapes
+
 
 def parse_prompt(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
-    # Try Gemini LLM first
     try:
         logger.debug(f"parse_prompt: Trying Gemini LLM for prompt: {prompt}")
         llm_result = call_gemini_llm(prompt)
-        if llm_result.get("shapes") or llm_result.get("texts"):
+        if isinstance(llm_result, dict) and "shapes" in llm_result:
             logger.debug(f"parse_prompt: Using Gemini LLM result: {llm_result}")
+            llm_result["shapes"] = flatten_points(llm_result["shapes"])
             return llm_result
+
     except Exception as e:
         logger.error(f"parse_prompt: Gemini LLM failed: {e}")
 
-    # Fallback to rule-based
     logger.debug(f"parse_prompt: Falling back to rule-based parser for prompt: {prompt}")
     prompt = prompt.lower()
     shapes = []
-    texts = []
-    lines = []
+
     for keyword, shape_type in SHAPE_KEYWORDS.items():
         if keyword in prompt:
             if shape_type == "rectangle":
@@ -104,7 +117,8 @@ def parse_prompt(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
                     "color": "green"
                 })
             elif shape_type == "text":
-                texts.append({
+                shapes.append({
+                    "type": "text",
                     "text": "Sample Text",
                     "x": 150,
                     "y": 250,
@@ -114,7 +128,8 @@ def parse_prompt(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
 
     text_match = re.search(r'write (.+)', prompt)
     if text_match:
-        texts.append({
+        shapes.append({
+            "type": "text",
             "text": text_match.group(1),
             "x": 200,
             "y": 350,
@@ -122,6 +137,8 @@ def parse_prompt(prompt: str) -> Dict[str, List[Dict[str, Any]]]:
             "color": "purple"
         })
 
-    result = {"shapes": shapes, "texts": texts}
+    shapes = flatten_points(shapes)
+    result = {"shapes": shapes}
+
     logger.debug(f"parse_prompt: Rule-based result: {result}")
-    return result 
+    return result

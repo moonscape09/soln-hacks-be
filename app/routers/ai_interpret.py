@@ -1,46 +1,67 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Literal, Union, Annotated, Optional
 from app.services.parser import parse_prompt
 
 router = APIRouter()
 
-# Pydantic models for response structure
-class Shape(BaseModel):
-    type: str
+# --- Shape Variants ---
+
+class RectangleShape(BaseModel):
+    type: Literal["rectangle"]
     x: int
     y: int
-    width: Optional[int] = None
-    height: Optional[int] = None
-    radius: Optional[int] = None
-    radiusX: Optional[int] = None
-    radiusY: Optional[int] = None
-    color: Optional[str] = None
+    width: int
+    height: int
+    color: Optional[str]
 
-class Line(BaseModel):
-    type: str  # should be "line"
-    points: List[float]
+class CircleShape(BaseModel):
+    type: Literal["circle"]
+    x: int
+    y: int
+    radius: int
+    color: Optional[str]
+
+class EllipseShape(BaseModel):
+    type: Literal["ellipse"]
+    x: int
+    y: int
+    radiusX: int
+    radiusY: int
+    color: Optional[str]
+
+class LineShape(BaseModel):
+    type: Literal["line"]
+    points: List[float]  # Each point is [x, y]
     stroke: str
     strokeWidth: int
 
-class TextAnnotation(BaseModel):
+
+class TextShape(BaseModel):
+    type: Literal["text"]
     text: str
     x: int
     y: int
     fontSize: Optional[int] = 24
     color: Optional[str] = "black"
 
-class InterpretResponse(BaseModel):
-    shapes: List[Shape] = []
-    texts: List[TextAnnotation] = []
+# --- Discriminated Union using Annotated + Field ---
+Shape = Annotated[
+    Union[RectangleShape, CircleShape, EllipseShape, LineShape, TextShape],
+    Field(discriminator="type")
+]
+
+# --- API Models ---
 
 class InterpretRequest(BaseModel):
     prompt: str
 
+class InterpretResponse(BaseModel):
+    shapes: List[Shape]
+
+# --- Endpoint ---
+
 @router.post("/", response_model=InterpretResponse)
 async def interpret_prompt(request: InterpretRequest):
     result = parse_prompt(request.prompt)
-    return InterpretResponse(
-        shapes=result["shapes"],
-        texts=result["texts"]
-    ) 
+    return InterpretResponse(shapes=result["shapes"])
